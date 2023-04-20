@@ -543,20 +543,30 @@ class DatasetInfo(object):
   def as_json(self) -> str:
     return json_format.MessageToJson(self.as_proto, sort_keys=True)
 
-  def write_to_directory(self, dataset_info_dir: epath.PathLike) -> None:
-    """Write `DatasetInfo` as JSON to `dataset_info_dir`."""
-    # Save the features structure & metadata (vocabulary, labels,...)
-    if self.features:
-      self.features.save_config(dataset_info_dir)
+  def write_to_directory(
+      self, dataset_info_dir: epath.PathLike, all_metadata=True
+  ) -> None:
+    """Write `DatasetInfo` as JSON to `dataset_info_dir` + labels & features.
 
-    # Save any additional metadata
-    if self.metadata is not None:
-      self.metadata.save_metadata(dataset_info_dir)
+    Args:
+      dataset_info_dir: path to directory in which to save the
+        `dataset_info.json` file, as well as `features.json` and `*.labels.txt`
+        if applicable.
+      all_metadata: if False, will only save the `dataset_info.json` file.
+    """
+    if all_metadata:
+      # Save the features structure & metadata (vocabulary, labels,...)
+      if self.features:
+        self.features.save_config(dataset_info_dir)
 
-    if self.redistribution_info.license:
-      license_path(dataset_info_dir).write_text(
-          self.redistribution_info.license
-      )
+      # Save any additional metadata
+      if self.metadata is not None:
+        self.metadata.save_metadata(dataset_info_dir)
+
+      if self.redistribution_info.license:
+        license_path(dataset_info_dir).write_text(
+            self.redistribution_info.license
+        )
 
     dataset_info_path(dataset_info_dir).write_text(self.as_json)
 
@@ -644,6 +654,12 @@ class DatasetInfo(object):
       except ValueError:
         is_defined = bool(field_value)
 
+      if not is_defined and field_name == "config_tags":
+        # Unfortunately we cannot distinguish between an empty
+        # list and an unset list in proto3, so rely on Python
+        # value to check whether config_tags is set:
+        is_defined = self._identity.config_tags is not None
+
       try:
         is_defined_in_restored = parsed_proto.HasField(field_name)
       except ValueError:
@@ -661,6 +677,7 @@ class DatasetInfo(object):
       if field.type == field.TYPE_MESSAGE:
         field_value.MergeFrom(field_value_restored)
       elif field.label == field.LABEL_REPEATED:
+        del field_value[:]
         field_value.extend(field_value_restored)
       else:
         setattr(self._info_proto, field_name, field_value_restored)
